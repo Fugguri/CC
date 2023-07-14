@@ -234,88 +234,83 @@ class Watsapp:
         self.startReceivingNotifications = self.greenAPI.webhooks.startReceivingNotifications
 
     def __onIncomingMessage(self, typeWebhook, body):
-        if typeWebhook == 'incomingMessageReceived':
-            phone = body["senderData"]["chatId"].replace("@c.us", "")
-            print(body["messageData"])
-            try:
-                message_text = body["messageData"]["textMessageData"]['textMessage']
-            except:
-                message_text = body["messageData"]["extendedTextMessageData"]['text']
+        if typeWebhook != 'incomingMessageReceived':
+            return
+        
+        phone = body["senderData"]["chatId"].replace("@c.us", "")
+        try:
+            message_text = body["messageData"]["textMessageData"]['textMessage']
+        except:
+            message_text = body["messageData"]["extendedTextMessageData"]['text']
+        
+        if "@" in message_text and self.emailer.verify_email(message_text.replace(" ", "")):
+            self.sending.sendMessage(phone+"@c.us",
+                                     "Корректный эмейл. Сохраняю")
+            self.db.update_email(phone, message_text)
+            receivers = self.db.get_tenant_by_phone_for_email(phone)
+            for receiver in receivers:
+                # if (receiver[12] == 'ИДЕТ ГОЛОСОВАНИЕ' and receiver[-8] != '') or receiver[12] != 'ИДЕТ ГОЛОСОВАНИЕ':
+                #     continue
+                cad_num = receiver[-1]
+                flat_num = receiver[-18]
+                phone = str(receiver[-14])
+                full_name = receiver[-11].split(" ")
+                notification = "documents/"+receiver[8]
+                house = self.db.get_house_data(cad_num, flat_num)
+                email = receiver[-10]
+                # if email != "":
+                #     continue
+                mailer_name = receiver[-15]
+                address = receiver[-3]
+                tenant_id = receiver[-20]
+                name_of_oss = receiver[1]
+                meeting_end_date = receiver[3].replace(
+                    "/", ".").replace(",", ".").replace("-", ".")
+                owner = self.db.get_owner_by_full_name(cad_num,
+                                                       full_name[0],
+                                                       full_name[1],
+                                                       full_name[2],)
+                print(owner)
+                # return
+                text = self.db.get_text_by_id("3")
+                text = text.format(mailer_name, address)
+                email_title = f"Ваше голосование на общем собрании {name_of_oss}"
+                sender_email_text = self.db.get_text_by_id(
+                    "2").format(email, name_of_oss, address)
+                date = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
+                phone = self._convert_number(phone)
+                self.db.update_tenant_mailing_data(
+                    cad_num, date, name_of_oss, tenant_id)
+                if datetime.datetime.strptime(meeting_end_date, "%d.%m.%Y") < datetime.datetime.today():
+                    print(2)
+                    continue
+                try:
+                    dock = prepair_dock(receiver, house, owner)
+                    self.emailer.send_sync_email(email,
+                                                 email_title,
+                                                 msg_html=dock,
+                                                 files=[notification,])
+                    self.sending.sendMessage(
+                        phone+"@c.us", sender_email_text)
+                except Exception as ex:
+                    print(ex)
+            return
+        elif "@" in message_text and not self.emailer.verify_email(message_text):
+            self.greenAPI.sending.sendMessage(phone+"@c.us",
+                                              "Некорректный эмейл попробуйте заново")
+            return
 
-            if "@" in message_text and self.emailer.verify_email(message_text.replace(" ", "")):
-                self.sending.sendMessage(phone+"@c.us",
-                                         "Корректный эмейл. Сохраняю")
-                self.db.update_email(phone, message_text)
-                receivers = self.db.get_tenant_by_phone_for_email(phone)
-                for receiver in receivers:
-                    print(receiver[-8])
-                    # if (receiver[12] == 'ИДЕТ ГОЛОСОВАНИЕ' and receiver[-8] != '') or receiver[12] != 'ИДЕТ ГОЛОСОВАНИЕ':
-                    #     continue
-                    print(receiver)
-
-                    cad_num = receiver[-1]
-                    flat_num = receiver[-18]
-                    phone = str(receiver[-14])
-                    full_name = receiver[-11].split(" ")
-                    notification = "documents/"+receiver[8]
-                    house = self.db.get_house_data(cad_num, flat_num)
-                    email = receiver[-10]
-                    # if email != "":
-
-                    #     continue
-                    mailer_name = receiver[-15]
-                    address = receiver[-3]
-                    tenant_id = receiver[-20]
-                    name_of_oss = receiver[1]
-                    meeting_end_date = receiver[3].replace(
-                        "/", ".").replace(",", ".").replace("-", ".")
-                    owner = self.db.get_owner_by_full_name(cad_num,
-                                                           full_name[0],
-                                                           full_name[1],
-                                                           full_name[2],)
-                    print(owner)
-                    # return
-                    text = self.db.get_text_by_id("3")
-                    text = text.format(mailer_name, address)
-                    email_title = f"Ваше голосование на общем собрании {name_of_oss}"
-                    sender_email_text = self.db.get_text_by_id(
-                        "2").format(email, name_of_oss, address)
-                    date = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
-                    phone = self._convert_number(phone)
-                    self.db.update_tenant_mailing_data(
-                        cad_num, date, name_of_oss, tenant_id)
-                    if datetime.datetime.strptime(meeting_end_date, "%d.%m.%Y") < datetime.datetime.today():
-                        print(2)
-                        continue
-                    try:
-                        dock = prepair_dock(receiver, house, owner)
-                        self.emailer.send_sync_email(email,
-                                                     email_title,
-                                                     msg_html=dock,
-                                                     files=[notification,])
-                        self.sending.sendMessage(
-                            phone+"@c.us", sender_email_text)
-
-                    except Exception as ex:
-                        print(ex)
-                return
-            elif "@" in message_text and not self.emailer.verify_email(message_text):
-                self.greenAPI.sending.sendMessage(phone+"@c.us",
-                                                  "Некорректный эмейл попробуйте заново")
-                return
-            if has_cyrillic(message_text):
-                self.greenAPI.sending.sendMessage(phone+"@c.us",
-                                                  """Приветствую! Кому Вы хотите передать это сообщение?
-Управляющему - введите 1, председателю - введите 2, секретарю собрания - введите 3""")
-                user_state[phone] = True
-                return
-            if self.db.is_phone_exist(phone):
-                if message_text == "1":
-                    self.sending.sendMessage(phone+"@c.us", "Текст")
-                if message_text == "2":
-                    self.sending.sendMessage(phone+"@c.us", "Текст")
-                if message_text == "3":
-                    self.sending.sendMessage(phone+"@c.us", "Текст")
+        if has_cyrillic(message_text):
+            self.greenAPI.sending.sendMessage(phone+"@c.us", "")
+            user_state[phone] = True
+            return
+        if self.db.is_phone_exist(phone):
+            if message_text == "1":
+                self.sending.sendMessage(phone+"@c.us", "Текст")
+            if message_text == "2":
+                self.sending.sendMessage(phone+"@c.us", "Текст")
+            if message_text == "3":
+                self.sending.sendMessage(phone+"@c.us", "Текст")
 
     def start_receive(self):
         self.startReceivingNotifications(self.__onIncomingMessage)
