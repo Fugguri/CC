@@ -424,11 +424,13 @@ async def redirect(callback: types.CallbackQuery, state: State):
         markup.add(types.InlineKeyboardButton(
             text="Др. квартира", callback_data="change_flat"))
         await Add_tenant.full_name.set()
-        # try:
-        db.update_owner_representative(temp_data["cad_num"],
-                                       temp_data["representative"],
-                                       temp_data["owner"]
-                                       )
+        try:
+            db.update_owner_representative(temp_data["cad_num"],
+                                           temp_data["representative"],
+                                           temp_data["owner"]
+                                           )
+        except:
+            pass
         db.add_tenant(tenants[callback.from_user.id])
         await wa.send_tenant_wellcome_message(temp_data["name"], temp_data["address"], temp_data["phone"])
 

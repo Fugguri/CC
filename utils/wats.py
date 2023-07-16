@@ -231,18 +231,20 @@ class Watsapp:
         self.db: Database = db
         self.sending = self.greenAPI.sending
         self.emailer = Mailer()
+        self.user_state = dict()
         self.startReceivingNotifications = self.greenAPI.webhooks.startReceivingNotifications
 
     def __onIncomingMessage(self, typeWebhook, body):
         if typeWebhook != 'incomingMessageReceived':
             return
-        
+
         phone = body["senderData"]["chatId"].replace("@c.us", "")
+        is_tenant = self.db.is_phone_exist(phone)
         try:
             message_text = body["messageData"]["textMessageData"]['textMessage']
         except:
             message_text = body["messageData"]["extendedTextMessageData"]['text']
-        
+
         if "@" in message_text and self.emailer.verify_email(message_text.replace(" ", "")):
             self.sending.sendMessage(phone+"@c.us",
                                      "Корректный эмейл. Сохраняю")
@@ -300,18 +302,34 @@ class Watsapp:
                                               "Некорректный эмейл попробуйте заново")
             return
 
-        if has_cyrillic(message_text):
-            self.greenAPI.sending.sendMessage(phone+"@c.us", "")
-            user_state[phone] = True
-            return
-        if self.db.is_phone_exist(phone):
-            if message_text == "1":
-                self.sending.sendMessage(phone+"@c.us", "Текст")
-            if message_text == "2":
-                self.sending.sendMessage(phone+"@c.us", "Текст")
-            if message_text == "3":
-                self.sending.sendMessage(phone+"@c.us", "Текст")
-
+        if is_tenant:
+            print(is_tenant)
+            if has_cyrillic(message_text):
+                if message_text == "1":
+                    self.sending.sendMessage(phone+"@c.us", "Текст")
+                if message_text == "2":
+                    self.sending.sendMessage(phone+"@c.us", "Текст")
+                if message_text == "3":
+                    self.sending.sendMessage(phone+"@c.us", "Текст")
+                self.greenAPI.sending.sendMessage(
+                    phone+"@c.us", "{0}, приветствую Вас!".format(is_tenant[2]))
+                self.user_state[phone] = True
+                return
+        else:
+            text = """Приветствую!
+ Меня зовут Домиант, я бот-помощник, работаю виртуальным консъержем в доме
+  _____________адрес дома__________________
+ Я могу передать сообщения жильцов и гостей управляющему, председателю (старшему по дому) или секретарю собраний."""
+            self.greenAPI.sending.sendMessage(phone+"@c.us", text)
+            self.greenAPI.sending.sendMessage(
+                phone+"@c.us", "Как могу к вам обращаться?")
+            self.user_state[phone] = "name"
+        if self.user_state[phone] == "name":
+            self.db 
+            self.greenAPI.sending.sendMessage(
+                phone+"@c.us", "Очень приятно, {}. Момент…".format(message_text))
+            
+            
     def start_receive(self):
         self.startReceivingNotifications(self.__onIncomingMessage)
 
