@@ -721,15 +721,18 @@ WHERE id=4 ; """)
             self.cursor.execute(
                 f"""SELECT tenants FROM 'houses'""")
             tenants_tables = self.cursor.fetchall()
-            query = ""
-            query += f"SELECT * from `{tenants_tables[0][0]}` "
-            for i in range(len(tenants_tables)):
-                if 0 < i:
-                    query += f"\nleft join `{tenants_tables[i][0]}`"
-                    query += f"USING (phone) "
-            query += f"WHERE phone={phone} "
+            try:
+                query = ""
+                query += f"SELECT * from `{tenants_tables[0][0]}` "
+                for i in range(len(tenants_tables)):
+                    if 0 < i:
+                        query += f"\nleft join `{tenants_tables[i][0]}`"
+                        query += f"USING (phone) "
+                query += f"WHERE phone={phone} "
 
-            self.cursor.execute(query)
+                self.cursor.execute(query)
+            except:
+                pass
         return self.cursor.fetchall()
 
     def check_email(self, cad_num, email):

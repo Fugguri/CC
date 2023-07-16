@@ -5,6 +5,9 @@ from DB_connectors.sqlite_connection import Database
 import smtplib
 import os
 import mimetypes
+from aiogram import Bot, types
+from config import TOKEN_API, ID_INSTANCE, API_TOKEN_INSTANCE
+import asyncio
 # Многокомпонентный объект
 from email.mime.multipart import MIMEMultipart
 from email.mime.audio import MIMEAudio                      # Аудио
@@ -232,18 +235,51 @@ class Watsapp:
         self.sending = self.greenAPI.sending
         self.emailer = Mailer()
         self.user_state = dict()
+        self.missive = dict()
+        self.receiver = dict()
+        self.guest = dict()
+        self.receiver_photos = dict()
         self.startReceivingNotifications = self.greenAPI.webhooks.startReceivingNotifications
+        self.bot = Bot(TOKEN_API, parse_mode="HTML")
+        self.admin_telegram_id = 328888017
 
     def __onIncomingMessage(self, typeWebhook, body):
         if typeWebhook != 'incomingMessageReceived':
             return
-
         phone = body["senderData"]["chatId"].replace("@c.us", "")
         is_tenant = self.db.is_phone_exist(phone)
-        try:
-            message_text = body["messageData"]["textMessageData"]['textMessage']
-        except:
-            message_text = body["messageData"]["extendedTextMessageData"]['text']
+
+        if body["messageData"]["typeMessage"] == "imageMessage":
+            print(body)
+            print(typeWebhook)
+
+            photo_url = body["messageData"]["fileMessageData"]["downloadUrl"]
+            file_name = body["messageData"]["fileMessageData"]["fileName"]
+            import httplib2
+            h = httplib2.Http('.cache')
+            response, content = h.request(photo_url)
+            out = open(f'wa_img/{file_name}', 'wb')
+            out.write(content)
+            out.close()
+            try:
+                self.receiver_photos[phone]
+            except:
+                self.receiver_photos[phone] = []
+            photos = self.receiver_photos[phone]
+            photos.append(f'wa_img/{file_name}')
+            self.greenAPI.sending.sendMessage(
+                phone+"@c.us", "Если это все фото - отправьте 0")
+            return
+        if body["messageData"]["typeMessage"] == "textMessage":
+
+            try:
+                message_text = str(body["messageData"]
+                                   ["textMessageData"]['textMessage'])
+            except:
+                message_text = str(body["messageData"]
+                                   ["extendedTextMessageData"]['text'])
+        else:
+            message_text = ""
 
         if "@" in message_text and self.emailer.verify_email(message_text.replace(" ", "")):
             self.sending.sendMessage(phone+"@c.us",
@@ -303,33 +339,135 @@ class Watsapp:
             return
 
         if is_tenant:
-            print(is_tenant)
-            if has_cyrillic(message_text):
-                if message_text == "1":
-                    self.sending.sendMessage(phone+"@c.us", "Текст")
-                if message_text == "2":
-                    self.sending.sendMessage(phone+"@c.us", "Текст")
-                if message_text == "3":
-                    self.sending.sendMessage(phone+"@c.us", "Текст")
+            try:
+                self.user_state[phone]
+            except:
                 self.greenAPI.sending.sendMessage(
-                    phone+"@c.us", "{0}, приветствую Вас!".format(is_tenant[2]))
-                self.user_state[phone] = True
+                    phone+"@c.us", "{0}, приветствую Вас!".format(is_tenant[0][5]))
+                self.user_state[phone] = ""
+                self.receiver_photos[phone] = ()
+            print(is_tenant)
+
+            if self.user_state[phone] == "comu":
+                if message_text in ["1", "2", "3"]:
+                    self.receiver[phone] = ""
+                    if message_text == "1":
+                        self.receiver[phone] = "Управляющий"
+                    if message_text == "2":
+                        self.receiver[phone] = "Председатель"
+                    if message_text == "3":
+                        self.receiver[phone] = "Секретарь собрания"
+                    self.sending.sendMessage(
+                        phone+"@c.us", "Понятно. Пожалуйста для большей ясности приложите сюда фото (или скан документа на который вы ссылаетесь). Если не будет фото/скан - нажмите 0")
+                    return
+                if message_text == "0":
+                    text = "Если жалоба или запрос: В какой форме Вы хотите получить ответ? Официальный на эл.почту (только через Квартирант) / просто сообщите о результате мне в ватцап / Ответ не требуется, просто примите к сведению."
+                    self.sending.sendMessage(phone+"@c.us", text)
+                    self.sending.sendMessage(
+                        phone+"@c.us", "Что-нибудь еще нужно передать?")
+                    return
+                if message_text.lower() == "нет":
+                    reply_message = f"<b>Получатель:</b> {self.receiver[phone]}\nЖитель: {is_tenant[0][5]}({is_tenant[0][4]} {is_tenant[0][2]} {is_tenant[0][7]}) - {self.missive[phone]}"
+                    try:
+                        media_group = types.MediaGroup()
+                        for media in self.receiver_photos[phone]:
+                            media_group.attach_photo(types.InputFile(
+                                media), f'{phone}')
+                        asyncio.run(self.bot.send_media_group(
+                            chat_id=248184623, media=media_group))
+                    except:
+                        pass
+                    asyncio.run(self.bot.send_message(
+                        chat_id=248184623, text=reply_message))
+                    # asyncio.run(self.bot.send_message(
+                    #     chat_id=self.admin_telegram_id, text=reply_message))
+                    self.sending.sendMessage(
+                        phone+"@c.us", "Было приятно поболтать.\nХорошего Вам дня!")
+                    self.missive.pop(phone)
+                    self.receiver.pop(phone)
+                    self.user_state.pop(phone)
                 return
-        else:
-            text = """Приветствую!
- Меня зовут Домиант, я бот-помощник, работаю виртуальным консъержем в доме
-  _____________адрес дома__________________
- Я могу передать сообщения жильцов и гостей управляющему, председателю (старшему по дому) или секретарю собраний."""
+            if has_cyrillic(message_text):
+                comu = """Кому Вы хотите передать это обращение?
+Управляющему (заявку, запрос или жалобу) - введите 1
+Председателю (заявление или предложение) - введите 2
+Секретарю собрания (опрос или голосование) - введите 3"""
+                self.greenAPI.sending.sendMessage(
+                    phone+"@c.us", comu)
+                self.user_state[phone] = "comu"
+                self.missive[phone] = message_text
+                return
+        try:
+            self.user_state[phone]
+        except:
+            self.user_state[phone] = ""
+        if is_tenant == [] and self.user_state[phone] == "":
+            text = """К сожалению Вас пока нет в моём списке жильцов дома.
+ Заполните пожалуйста регистрационную анкету по ссылке https://docs.google.com/forms/d/e/1FAIpQLSe15YFYVcsRFfPhaV4ml-YZbxsjWu2sV7eb7NHEojrWvWEwVg/viewform?usp=sf_link (анкета опроса). 
+ После этого Ваши данные будут внесены в реестр жильцов дома и я смогу передать Ваш вопрос по назначению."""
             self.greenAPI.sending.sendMessage(phone+"@c.us", text)
             self.greenAPI.sending.sendMessage(
                 phone+"@c.us", "Как могу к вам обращаться?")
+            self.missive[phone] = message_text
             self.user_state[phone] = "name"
+            return
         if self.user_state[phone] == "name":
-            self.db 
+            self.db
+            self.guest[phone] = {}
+            self.guest[phone]['name'] = message_text
             self.greenAPI.sending.sendMessage(
                 phone+"@c.us", "Очень приятно, {}. Момент…".format(message_text))
-            
-            
+            self.user_state[phone] = ""
+            comu = """Кому Вы хотите передать это обращение?
+Управляющему (заявку, запрос или жалобу) - введите 1
+Председателю (заявление или предложение) - введите 2
+Секретарю собрания (опрос или голосование) - введите 3"""
+            self.greenAPI.sending.sendMessage(
+                phone+"@c.us", comu)
+            self.user_state[phone] = "comu"
+
+            return
+        if self.user_state[phone] == "comu":
+            if message_text in ["1", "2", "3"]:
+                self.receiver[phone] = ""
+                if message_text == "1":
+                    self.receiver[phone] = "Управляющий"
+                if message_text == "2":
+                    self.receiver[phone] = "Председатель"
+                if message_text == "3":
+                    self.receiver[phone] = "Секретарь собрания"
+                self.sending.sendMessage(
+                    phone+"@c.us", "Понятно. Пожалуйста для большей ясности приложите сюда фото (или скан документа на который вы ссылаетесь). Если не будет фото/скан - нажмите 0")
+                return
+        if message_text == "0":
+            text = "Если жалоба или запрос: В какой форме Вы хотите получить ответ? Официальный на эл.почту (только через Квартирант) / просто сообщите о результате мне в ватцап / Ответ не требуется, просто примите к сведению."
+            self.sending.sendMessage(phone+"@c.us", text)
+            self.sending.sendMessage(
+                phone+"@c.us", "Что-нибудь еще нужно передать?")
+            return
+        if message_text.lower() == "нет":
+            reply_message = f"<b>Получатель:</b> {self.receiver[phone]}\nГость: {self.guest[phone]['name']}(+{phone}) - {self.missive[phone]}"
+
+            try:
+                media_group = types.MediaGroup()
+                for media in self.receiver_photos[phone]:
+                    media_group.attach_photo(types.InputFile(
+                        media), 'Превосходная фотография')
+                asyncio.run(self.bot.send_media_group(
+                    chat_id=248184623, media=media_group))
+            except Exception as ex:
+                print(ex)
+                asyncio.run(self.bot.send_message(
+                    chat_id=248184623, text=reply_message))
+            # asyncio.run(self.bot.send_message(
+            #     chat_id=self.admin_telegram_id, text=reply_message))
+            self.sending.sendMessage(
+                phone+"@c.us", "Было приятно поболтать.\nХорошего Вам дня!")
+            self.missive.pop(phone)
+            self.receiver.pop(phone)
+            self.user_state.pop(phone)
+            return
+
     def start_receive(self):
         self.startReceivingNotifications(self.__onIncomingMessage)
 
@@ -410,5 +548,4 @@ class Watsapp:
 
 
 if __name__ == "__main__":
-    wa = Watsapp()
-    wa.is_wa_exist("89502213750")
+    bot = Bot(TOKEN_API, parse_mode="HTML")
