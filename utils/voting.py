@@ -17,7 +17,7 @@ from whatsapp_api_client_python import API
 from smtplib import SMTPNotSupportedError, SMTPDataError
 from .dock import prepair_dock
 import os
-from DB_connectors.sqlite_connection import Database
+from DB.sqlite_connection import Database
 db = Database("CC.db")
 
 ID_INSTANCE = "1101817417"

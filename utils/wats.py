@@ -1,12 +1,15 @@
+from .texts import Texts
+from .google import GoogleSheest
+from .telegram import Telegram
 from whatsapp_api_client_python import API
 from typing import Union
 import re
-from DB_connectors.sqlite_connection import Database
+from DB.sqlite_connection import Database
 import smtplib
 import os
 import mimetypes
 from aiogram import Bot, types
-from config import TOKEN_API, ID_INSTANCE, API_TOKEN_INSTANCE
+from config import db_name, ID_INSTANCE, API_TOKEN_INSTANCE
 import asyncio
 # Многокомпонентный объект
 from email.mime.multipart import MIMEMultipart
@@ -24,6 +27,7 @@ import os
 import smtplib
 import datetime
 import mammoth
+from .utils import Utils
 user_state = {}
 # Функция по добавлению конкретного файла к сообщению
 
@@ -71,14 +75,6 @@ def prepair_dock(receiver, house=None, owner=None):
     </body>
     </html>"""
     return html
-
-
-def valid_email(email):
-    return bool(re.search(r"^[\w\.\+\-]+\@[\w]+\.[a-z]{2,3}$", email))
-
-
-def has_cyrillic(text):
-    return bool(re.search('[а-яА-Я]', text))
 
 
 class Mailer:
@@ -227,32 +223,50 @@ class Mailer:
                     self.__attach_file(msg, f+"/"+file)
 
 
-class Watsapp:
+class Watsapp_utils(Utils):
+    async def is_wa_exist(self, phone):
+        request = self.greenAPI.serviceMethods.checkWhatsapp(phone).data
+        try:
+            exist = request["existsWhatsapp"]
+        except:
+            return False
+        return exist
 
-    def __init__(self, ID_INSTANCE, API_TOKEN_INSTANCE, db):
-        self.greenAPI = API.GreenApi(ID_INSTANCE, API_TOKEN_INSTANCE)
-        self.db: Database = db
-        self.sending = self.greenAPI.sending
-        self.emailer = Mailer()
-        self.user_state = dict()
-        self.missive = dict()
-        self.receiver = dict()
-        self.guest = dict()
-        self.receiver_photos = dict()
-        self.startReceivingNotifications = self.greenAPI.webhooks.startReceivingNotifications
-        self.bot = Bot(TOKEN_API, parse_mode="HTML")
-        self.admin_telegram_id = 328888017
+    def set_state(self, phone, state):
+        try:
+            self.user_state[phone] = state
+            return True
+        except:
+            return False
 
-    def __onIncomingMessage(self, typeWebhook, body):
-        if typeWebhook != 'incomingMessageReceived':
-            return
-        phone = body["senderData"]["chatId"].replace("@c.us", "")
-        is_tenant = self.db.is_phone_exist(phone)
+    def get_state(self, phone):
+        try:
+            return self.user_state[phone]
+        except:
+            self.user_state[phone] = ""
+            return self.user_state[phone]
 
-        if body["messageData"]["typeMessage"] == "imageMessage":
-            print(body)
-            print(typeWebhook)
+    def create_income_message_text(self, body):
+        if body["messageData"]["typeMessage"] == "textMessage":
 
+            try:
+                message_text = str(body["messageData"]
+                                   ["textMessageData"]['textMessage'])
+            except:
+                message_text = str(body["messageData"]
+                                   ["extendedTextMessageData"]['text'])
+
+        else:
+            message_text = ""
+
+        return message_text
+
+    def clear_phone(self, body):
+        return body["senderData"]["chatId"].replace("@c.us", "")
+
+    def collect_photo(self, body, phone):
+        # if body["messageData"]["typeMessage"] == "imageMessage":
+        try:
             photo_url = body["messageData"]["fileMessageData"]["downloadUrl"]
             file_name = body["messageData"]["fileMessageData"]["fileName"]
             import httplib2
@@ -267,219 +281,56 @@ class Watsapp:
                 self.receiver_photos[phone] = []
             photos = self.receiver_photos[phone]
             photos.append(f'wa_img/{file_name}')
-            self.greenAPI.sending.sendMessage(
-                phone+"@c.us", "Если это все фото - отправьте 0")
-            return
-        if body["messageData"]["typeMessage"] == "textMessage":
-
-            try:
-                message_text = str(body["messageData"]
-                                   ["textMessageData"]['textMessage'])
-            except:
-                message_text = str(body["messageData"]
-                                   ["extendedTextMessageData"]['text'])
-        else:
-            message_text = ""
-
-        if "@" in message_text and self.emailer.verify_email(message_text.replace(" ", "")):
-            self.sending.sendMessage(phone+"@c.us",
-                                     "Корректный эмейл. Сохраняю")
-            self.db.update_email(phone, message_text)
-            receivers = self.db.get_tenant_by_phone_for_email(phone)
-            for receiver in receivers:
-                # if (receiver[12] == 'ИДЕТ ГОЛОСОВАНИЕ' and receiver[-8] != '') or receiver[12] != 'ИДЕТ ГОЛОСОВАНИЕ':
-                #     continue
-                cad_num = receiver[-1]
-                flat_num = receiver[-18]
-                phone = str(receiver[-14])
-                full_name = receiver[-11].split(" ")
-                notification = "documents/"+receiver[8]
-                house = self.db.get_house_data(cad_num, flat_num)
-                email = receiver[-10]
-                # if email != "":
-                #     continue
-                mailer_name = receiver[-15]
-                address = receiver[-3]
-                tenant_id = receiver[-20]
-                name_of_oss = receiver[1]
-                meeting_end_date = receiver[3].replace(
-                    "/", ".").replace(",", ".").replace("-", ".")
-                owner = self.db.get_owner_by_full_name(cad_num,
-                                                       full_name[0],
-                                                       full_name[1],
-                                                       full_name[2],)
-                print(owner)
-                # return
-                text = self.db.get_text_by_id("3")
-                text = text.format(mailer_name, address)
-                email_title = f"Ваше голосование на общем собрании {name_of_oss}"
-                sender_email_text = self.db.get_text_by_id(
-                    "2").format(email, name_of_oss, address)
-                date = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
-                phone = self._convert_number(phone)
-                self.db.update_tenant_mailing_data(
-                    cad_num, date, name_of_oss, tenant_id)
-                if datetime.datetime.strptime(meeting_end_date, "%d.%m.%Y") < datetime.datetime.today():
-                    print(2)
-                    continue
-                try:
-                    dock = prepair_dock(receiver, house, owner)
-                    self.emailer.send_sync_email(email,
-                                                 email_title,
-                                                 msg_html=dock,
-                                                 files=[notification,])
-                    self.sending.sendMessage(
-                        phone+"@c.us", sender_email_text)
-                except Exception as ex:
-                    print(ex)
-            return
-        elif "@" in message_text and not self.emailer.verify_email(message_text):
-            self.greenAPI.sending.sendMessage(phone+"@c.us",
-                                              "Некорректный эмейл попробуйте заново")
-            return
-
-        if is_tenant:
-            try:
-                self.user_state[phone]
-            except:
-                self.greenAPI.sending.sendMessage(
-                    phone+"@c.us", "{0}, приветствую Вас!".format(is_tenant[0][5]))
-                self.user_state[phone] = ""
-                self.receiver_photos[phone] = ()
-            print(is_tenant)
-
-            if self.user_state[phone] == "comu":
-                if message_text in ["1", "2", "3"]:
-                    self.receiver[phone] = ""
-                    if message_text == "1":
-                        self.receiver[phone] = "Управляющий"
-                    if message_text == "2":
-                        self.receiver[phone] = "Председатель"
-                    if message_text == "3":
-                        self.receiver[phone] = "Секретарь собрания"
-                    self.sending.sendMessage(
-                        phone+"@c.us", "Понятно. Пожалуйста для большей ясности приложите сюда фото (или скан документа на который вы ссылаетесь). Если не будет фото/скан - нажмите 0")
-                    return
-                if message_text == "0":
-                    text = "Если жалоба или запрос: В какой форме Вы хотите получить ответ? Официальный на эл.почту (только через Квартирант) / просто сообщите о результате мне в ватцап / Ответ не требуется, просто примите к сведению."
-                    self.sending.sendMessage(phone+"@c.us", text)
-                    self.sending.sendMessage(
-                        phone+"@c.us", "Что-нибудь еще нужно передать?")
-                    return
-                if message_text.lower() == "нет":
-                    reply_message = f"<b>Получатель:</b> {self.receiver[phone]}\nЖитель: {is_tenant[0][5]}({is_tenant[0][4]} {is_tenant[0][2]} {is_tenant[0][7]}) - {self.missive[phone]}"
-                    try:
-                        media_group = types.MediaGroup()
-                        for media in self.receiver_photos[phone]:
-                            media_group.attach_photo(types.InputFile(
-                                media), f'{phone}')
-                        asyncio.run(self.bot.send_media_group(
-                            chat_id=248184623, media=media_group))
-                    except:
-                        pass
-                    asyncio.run(self.bot.send_message(
-                        chat_id=248184623, text=reply_message))
-                    # asyncio.run(self.bot.send_message(
-                    #     chat_id=self.admin_telegram_id, text=reply_message))
-                    self.sending.sendMessage(
-                        phone+"@c.us", "Было приятно поболтать.\nХорошего Вам дня!")
-                    self.missive.pop(phone)
-                    self.receiver.pop(phone)
-                    self.user_state.pop(phone)
-                return
-            if has_cyrillic(message_text):
-                comu = """Кому Вы хотите передать это обращение?
-Управляющему (заявку, запрос или жалобу) - введите 1
-Председателю (заявление или предложение) - введите 2
-Секретарю собрания (опрос или голосование) - введите 3"""
-                self.greenAPI.sending.sendMessage(
-                    phone+"@c.us", comu)
-                self.user_state[phone] = "comu"
-                self.missive[phone] = message_text
-                return
-        try:
-            self.user_state[phone]
-        except:
-            self.user_state[phone] = ""
-        if is_tenant == [] and self.user_state[phone] == "":
-            text = """К сожалению Вас пока нет в моём списке жильцов дома.
- Заполните пожалуйста регистрационную анкету по ссылке https://docs.google.com/forms/d/e/1FAIpQLSe15YFYVcsRFfPhaV4ml-YZbxsjWu2sV7eb7NHEojrWvWEwVg/viewform?usp=sf_link (анкета опроса). 
- После этого Ваши данные будут внесены в реестр жильцов дома и я смогу передать Ваш вопрос по назначению."""
-            self.greenAPI.sending.sendMessage(phone+"@c.us", text)
-            self.greenAPI.sending.sendMessage(
-                phone+"@c.us", "Как могу к вам обращаться?")
-            self.missive[phone] = message_text
-            self.user_state[phone] = "name"
-            return
-        if self.user_state[phone] == "name":
-            self.db
-            self.guest[phone] = {}
-            self.guest[phone]['name'] = message_text
-            self.greenAPI.sending.sendMessage(
-                phone+"@c.us", "Очень приятно, {}. Момент…".format(message_text))
-            self.user_state[phone] = ""
-            comu = """Кому Вы хотите передать это обращение?
-Управляющему (заявку, запрос или жалобу) - введите 1
-Председателю (заявление или предложение) - введите 2
-Секретарю собрания (опрос или голосование) - введите 3"""
-            self.greenAPI.sending.sendMessage(
-                phone+"@c.us", comu)
-            self.user_state[phone] = "comu"
-
-            return
-        if self.user_state[phone] == "comu":
-            if message_text in ["1", "2", "3"]:
-                self.receiver[phone] = ""
-                if message_text == "1":
-                    self.receiver[phone] = "Управляющий"
-                if message_text == "2":
-                    self.receiver[phone] = "Председатель"
-                if message_text == "3":
-                    self.receiver[phone] = "Секретарь собрания"
-                self.sending.sendMessage(
-                    phone+"@c.us", "Понятно. Пожалуйста для большей ясности приложите сюда фото (или скан документа на который вы ссылаетесь). Если не будет фото/скан - нажмите 0")
-                return
-        if message_text == "0":
-            text = "Если жалоба или запрос: В какой форме Вы хотите получить ответ? Официальный на эл.почту (только через Квартирант) / просто сообщите о результате мне в ватцап / Ответ не требуется, просто примите к сведению."
-            self.sending.sendMessage(phone+"@c.us", text)
-            self.sending.sendMessage(
-                phone+"@c.us", "Что-нибудь еще нужно передать?")
-            return
-        if message_text.lower() == "нет":
-            reply_message = f"<b>Получатель:</b> {self.receiver[phone]}\nГость: {self.guest[phone]['name']}(+{phone}) - {self.missive[phone]}"
-
-            try:
-                media_group = types.MediaGroup()
-                for media in self.receiver_photos[phone]:
-                    media_group.attach_photo(types.InputFile(
-                        media), 'Превосходная фотография')
-                asyncio.run(self.bot.send_media_group(
-                    chat_id=248184623, media=media_group))
-            except Exception as ex:
-                print(ex)
-                asyncio.run(self.bot.send_message(
-                    chat_id=248184623, text=reply_message))
-            # asyncio.run(self.bot.send_message(
-            #     chat_id=self.admin_telegram_id, text=reply_message))
-            self.sending.sendMessage(
-                phone+"@c.us", "Было приятно поболтать.\nХорошего Вам дня!")
-            self.missive.pop(phone)
-            self.receiver.pop(phone)
-            self.user_state.pop(phone)
-            return
-
-    def start_receive(self):
-        self.startReceivingNotifications(self.__onIncomingMessage)
-
-    async def is_wa_exist(self, phone):
-        request = self.greenAPI.serviceMethods.checkWhatsapp(phone).data
-        try:
-            exist = request["existsWhatsapp"]
+            return True
         except:
             return False
-        return exist
+
+    def reset_user_data(self, phone):
+        try:
+            self.missive.pop(phone)
+        except:
+            pass
+        try:
+            self.receiver.pop(phone)
+        except:
+            pass
+        try:
+            self.guest.pop(phone)
+        except:
+            pass
+        try:
+            self.receiver_photos.pop(phone)
+        except:
+            pass
+
+    def _convert_number(self, phone):
+        if phone.startswith("8"):
+            phone = "7"+phone[1:]
+        if phone.startswith("+"):
+            phone = phone[1:]
+        if "-" in phone:
+            phone = phone.replace('-', '')
+        return phone
+
+
+class Watsapp(Watsapp_utils):
+
+    def __init__(self):
+        self.greenAPI = API.GreenApi(ID_INSTANCE, API_TOKEN_INSTANCE)
+
+        self.db = Database(db_name)
+        self.gs = GoogleSheest()
+        self.emailer = Mailer()
+        self.create_text = Texts()
+        self.tg = Telegram()
+        self.sending = self.greenAPI.sending
+        self.startReceivingNotifications = self.greenAPI.webhooks.startReceivingNotifications
 
     async def send_message(self, text, phone):
+        phone = self._convert_number(phone)
+        self.greenAPI.sending.sendMessage(phone+"@c.us", text)
+
+    def send_sync_message(self, text, phone):
         phone = self._convert_number(phone)
         self.greenAPI.sending.sendMessage(phone+"@c.us", text)
 
@@ -537,15 +388,240 @@ class Watsapp:
             receiver[-10], name_of_oss, address)
         self.sending.sendMessage(phone+"@c.us", text)
 
-    def _convert_number(self, phone):
-        if phone.startswith("8"):
-            phone = "7"+phone[1:]
-        if phone.startswith("+"):
-            phone = phone[1:]
-        if "-" in phone:
-            phone = phone.replace('-', '')
-        return phone
+
+class Watsapp_bot(Watsapp, Utils):
+    def __init__(self):
+        super().__init__()
+        self.user_state = dict()
+        self.missive = dict()
+        self.receiver = dict()
+        self.guest = dict()
+        self.receiver_photos = dict()
+        
+    def start_receive(self):
+        self.startReceivingNotifications(self.__onIncomingMessage)
+
+    def __onIncomingMessage(self, typeWebhook, body):
+
+        if typeWebhook != 'incomingMessageReceived':
+            return
+
+        phone = self.clear_phone(body)
+        is_tenant = self.db.is_phone_exist(phone)
+        state = self.get_state(phone)
+        message_text = self.create_income_message_text(body)
+
+        if self.collect_photo(body, phone):
+            text = "Если это все фото - отправьте 0"
+            self.send_sync_message(text, phone)
+            return
+
+        if "@" in message_text and self.emailer.verify_email(message_text.replace(" ", "")):
+            text = "Корректный эмейл. Сохраняю"
+            self.sending.sendMessage(text, phone)
+
+            self.db.update_email(phone, message_text)
+
+            receivers = self.db.get_tenant_by_phone_for_email(phone)
+
+            for receiver in receivers:
+                # if (receiver[12] == 'ИДЕТ ГОЛОСОВАНИЕ' and receiver[-8] != '') or receiver[12] != 'ИДЕТ ГОЛОСОВАНИЕ':
+                #     continue
+                cad_num = receiver[-1]
+                flat_num = receiver[-18]
+                phone = str(receiver[-14])
+                full_name = receiver[-11].split(" ")
+                notification = "documents/"+receiver[8]
+                house = self.db.get_house_data(cad_num, flat_num)
+                email = receiver[-10]
+                # if email != "":
+                #     continue
+                mailer_name = receiver[-15]
+                address = receiver[-3]
+                tenant_id = receiver[-20]
+                name_of_oss = receiver[1]
+                meeting_end_date = receiver[3].replace(
+                    "/", ".").replace(",", ".").replace("-", ".")
+                owner = self.db.get_owner_by_full_name(cad_num,
+                                                       full_name[0],
+                                                       full_name[1],
+                                                       full_name[2],)
+                # return
+                text = self.db.get_text_by_id("3")
+                text = text.format(mailer_name, address)
+                email_title = f"Ваше голосование на общем собрании {name_of_oss}"
+                sender_email_text = self.db.get_text_by_id(
+                    "2").format(email, name_of_oss, address)
+                date = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
+                phone = self._convert_number(phone)
+                self.db.update_tenant_mailing_data(
+                    cad_num, date, name_of_oss, tenant_id)
+                if datetime.datetime.strptime(meeting_end_date, "%d.%m.%Y") < datetime.datetime.today():
+                    print(2)
+                    continue
+                try:
+                    dock = prepair_dock(receiver, house, owner)
+                    self.emailer.send_sync_email(email,
+                                                 email_title,
+                                                 msg_html=dock,
+                                                 files=[notification,])
+                    self.sending.sendMessage(
+                        phone+"@c.us", sender_email_text)
+                except Exception as ex:
+                    print(ex)
+
+            return
+
+        elif "@" in message_text and not self.emailer.verify_email(message_text):
+
+            text = "Некорректный эмейл попробуйте заново"
+            self.send_sync_message(text, phone)
+
+            return
+
+        if is_tenant:
+            if not state:
+                self.send_sync_message(
+                    "{0}, приветствую Вас! ".format(is_tenant[0][5]), phone)
+                self.set_state(phone, "comu")
+
+            if self.has_cyrillic(message_text):
+                comu = """Кому Вы хотите передать это обращение?
+Управляющему (заявку, запрос или жалобу) - введите 1
+Председателю (заявление или предложение) - введите 2
+Секретарю собрания (опрос или голосование) - введите 3
+"""
+                self.greenAPI.sending.sendMessage(
+                    phone+"@c.us", comu)
+                self.user_state[phone] = "comu"
+                self.missive[phone] = message_text
+
+            return
+
+        if "МКД:" in message_text and "Кад.Ном:" in message_text and not is_tenant:
+            a= message_text.replace("МКД:","")
+            a = a.replace("Кад.Ном:","")
+            address, cad_num = a.split("\n")
+            
+            try:
+                self.guest[phone]['address'] = address.strip()
+                self.guest[phone]['cad_num'] = cad_num.strip()
+            except:
+                self.guest[phone] = {}
+                self.guest[phone]['address'] = address.strip()
+                self.guest[phone]['cad_num'] = cad_num.strip()
+                
+            if not self.db.get_house_by_cad_num(cad_num=cad_num.strip()):
+                self.guest[phone]['address'] = address.strip()
+                self.guest[phone]['cad_num'] = cad_num.strip()
+        # if not is_tenant and not state:
+                wellcome_text = f"""Приветствую!
+Меня зовут Домиант, я бот-помощник, работаю виртуальным консъержем в доме
+{address}
+Я могу передать сообщения жильцов и гостей управляющему, председателю (старшему по дому) или секретарю собраний."""
+                self.send_sync_message(wellcome_text, phone)
+
+                text = "Как могу к вам обращаться?"
+                self.send_sync_message(text, phone)
+                self.set_state(phone, "name")
+                self.missive[phone] = message_text
+
+        if state == "wait_form" or not state:
+            if message_text.lower() == "заполнил":
+                try:
+                    address = self.guest[phone]['address'] 
+                    cad_num = self.guest[phone]['cad_num'] 
+                    gf_link = self.create_gf_link(phone,address)
+                except Exception as ex:
+                    print(ex)
+                self.gs.new_form_notify(phone)
+                text = "Спасибо, уточните пожалуйста ваш вопрос"
+                self.send_sync_message(text, phone)                
+                return
+                
+        if not state:
+            
+            if is_tenant:            
+                text = """Кому Вы хотите передать это обращение?
+Управляющему (заявку, запрос или жалобу) - введите 1
+Председателю (заявление или предложение) - введите 2
+Секретарю собрания (опрос или голосование) - введите 3"""
+
+                self.send_sync_message(text, phone)
+                self.set_state(phone, "comu")
+                return
+            else:
+                self.set_state(phone,"name")
+                self.missive[phone] = message_text
+                text = "Как могу к вам обращаться?"
+                self.send_sync_message(text, phone)
+                return
+
+        if state == "name":
+            
+            try:
+                address = self.guest[phone]['address'] 
+                cad_num = self.guest[phone]['cad_num'] 
+                
+                gf_link = self.create_gf_link(phone,address)
+            except Exception as ex:
+                gf_link = self.create_gf_link(phone,"")
+                
+                print(ex)
+            
+            self.send_sync_message(
+                "Очень приятно, {}. Момент…".format(message_text), phone)
+            try:
+                self.guest[phone]['name'] = message_text
+            except:
+                self.guest[phone] = {}
+                self.guest[phone]['name'] = message_text
+                
+            text = f"""К сожалению Вас пока нет в моём списке жильцов дома.
+ Заполните пожалуйста регистрационную анкету по ссылке {gf_link}. 
+ После этого Ваши данные будут внесены в реестр жильцов дома и я смогу передать Ваш вопрос по назначению."""
+
+            self.send_sync_message(text, phone)
+            self.set_state(phone, "wait_form")
+            return
+
+        if state == "comu":
+
+            if message_text in ["1", "2", "3"]:
+                self.receiver[phone] = ""
+                if message_text == "1":
+                    self.receiver[phone] = "Управляющий"
+                if message_text == "2":
+                    self.receiver[phone] = "Председатель"
+                if message_text == "3":
+                    self.receiver[phone] = "Секретарь собрания"
+                text = "Понятно. Пожалуйста для большей ясности приложите сюда фото (или скан документа на который вы ссылаетесь). Если не будет фото/скан - нажмите 0"
+                self.send_sync_message(text, phone)
+                return
+
+            if message_text == "0":
+                text = "Что-нибудь еще нужно передать?"
+                self.send_sync_message(text, phone)
+                return
+
+            if message_text.lower() == "нет":
+                reply_message = f"<b>Получатель:</b> {self.receiver[phone]}\nГость: {self.guest[phone]['name']}(+{phone}) - {self.missive[phone]}"
+
+                try:
+                    media = self.receiver_photos[phone]
+                    self.tg.send_telegram_notification(reply_message, media)
+                except Exception as ex:
+                    print(ex)
+                    self.tg.send_telegram_notification(reply_message)
+                text = "Было приятно поболтать.\nХорошего Вам дня!"
+                self.send_sync_message(text, phone)
+                self.reset_user_data(phone)
+                return
+            else:
+                text = "Отправьте текст обращения"
+                self.send_sync_message(text, phone)
+                self.reset_user_data(phone)
 
 
 if __name__ == "__main__":
-    bot = Bot(TOKEN_API, parse_mode="HTML")
+    pass

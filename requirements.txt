@@ -1,7 +1,8 @@
 aiogram==2.23.1
 docx==0.2.4
 gspread==5.8.0
+httplib2==0.22.0
 mammoth==1.5.1
 pandas==1.5.2
-PyYAML==6.0
+PyYAML==6.0.1
 whatsapp_api_client_python==0.0.34

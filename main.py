@@ -1,8 +1,8 @@
-from texts import Texts
+from utils.texts import Texts
 from aiogram import Bot, Dispatcher, executor
 from config import TOKEN_API, ID_INSTANCE, API_TOKEN_INSTANCE
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
-from DB_connectors.sqlite_connection import Database
+from DB.sqlite_connection import Database
 from utils.wats import Watsapp
 import logging
 # from aiogram.contrib.middlewares.logging import LoggingMiddleware
@@ -17,7 +17,7 @@ logger.addHandler(py_handler)
 bot = Bot(TOKEN_API, parse_mode="HTML")
 dp = Dispatcher(bot, storage=storage)
 db = Database("CC.db")
-wa = Watsapp(ID_INSTANCE, API_TOKEN_INSTANCE, db)
+wa = Watsapp()
 texts = Texts()
 
 

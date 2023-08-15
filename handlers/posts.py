@@ -6,7 +6,7 @@ from keyboards.keyboards import schoise_kb, posts_menu_kb
 from main import dp, bot, db, wa, texts
 
 from utils.exel import exel_reader
-from DB_connectors.sqlite_connection import Texts
+from DB.sqlite_connection import Texts
 db_texts = Texts("CC.db")
 cur_cad_num = ""
 
@@ -50,6 +50,7 @@ async def post_registry(callback: types.CallbackQuery, state=State):
 async def new_post(callback: types.CallbackQuery):
     text = """<b>Введите код-номер поста, который хотите отредактировать или введите 000 чтобы добавить новый пост.</b>"""
     await callback.message.answer(text)
+    print(callback.message.text)
     await Posts.post_action.set()
 
 

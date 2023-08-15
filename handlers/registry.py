@@ -6,9 +6,11 @@ from aiogram.dispatcher.filters import Text
 from keyboards.keyboards import start_kb, registry_kb, back_kb, houses_kb, schoise_kb
 
 from main import dp, bot, db, wa
+from utils import generate_qrcode
 
 from utils.exel import exel_reader
-
+from utils.texts import Texts
+texts = Texts()
 cur_cad_num = ""
 
 
@@ -20,10 +22,12 @@ class AddWord(StatesGroup):
     get_file = State()
     update_house = State()
     want_add_tenants = State()
+    qrcode = State()
 
 
 user_filename = {}
 user_file_id = {}
+user_info_message = {}
 
 
 @dp.message_handler(Text("Дома"), state="*")
@@ -64,14 +68,31 @@ async def add_user(message: types.Message):
 async def houses_list(callback: types.CallbackQuery):
     markup = await houses_kb()
     db.get_houses_list()
-    await callback.message.answer("Выберите дом, к которому добавляется реестр", reply_markup=markup)
+    await callback.message.edit_text("Выберите дом, к которому добавляется реестр", reply_markup=markup)
 
+@dp.callback_query_handler(lambda call: call.data == "qrcode", state="*")
+async def add_user(callback: types.CallbackQuery):
+    markup = await houses_kb()
+    await AddWord.qrcode.set()
+    await callback.message.edit_text("Выберите дом", reply_markup=markup)
+    
+    
+@dp.callback_query_handler(lambda call: call.data in [i[2] for i in db.all_houses()], state=AddWord)
+async def add_owners(callback: types.CallbackQuery, state: State):
+    house = db.get_house_by_id(callback.data)
+    markup = await back_kb()
+    link = texts.create_house_link(house)
+    image = generate_qrcode(link)
+    
+    text = link.replace("https://wa.me/79319869456?text=","")
+    await callback.message.answer_photo(photo=image,caption=text,reply_markup=markup) 
+    
 
 @dp.callback_query_handler(lambda call: call.data == "add onwer", state="*")
 async def add_user(callback: types.CallbackQuery):
     markup = await houses_kb()
     await AddWord.add_onwer.set()
-    await callback.message.answer("Выберите дом, к которому добавляется реестр", reply_markup=markup)
+    await callback.message.edit_text("Выберите дом, к которому добавляется реестр", reply_markup=markup)
 
 
 @dp.callback_query_handler(lambda call: call.data in [i[2] for i in db.all_houses()], state=AddWord)
@@ -83,10 +104,10 @@ async def add_owners(callback: types.CallbackQuery, state: State):
         cur_cad_num = callback.data
     owners = db.get_all_owners(cur_cad_num)
     if owners:
-        await callback.message.answer(f"""Внимание! По этому адресу уже загружено {len(owners)} собственник. Хотите продолжить загрузку собственников?\nЗагрузите excel-файл с реестром всех собственников в доме.
+        await callback.message.edit_text(f"""Внимание! По этому адресу уже загружено {len(owners)} собственник. Хотите продолжить загрузку собственников?\nЗагрузите excel-файл с реестром всех собственников в доме.
 Шаблон файла запросите по ссылке @ShkolaUpravdoma""", reply_markup=markup)
         return
-    await callback.message.answer("""Загрузите excel-файл с реестром всех собственников в доме.
+    await callback.message.edit_text("""Загрузите excel-файл с реестром всех собственников в доме.
 Шаблон файла запросите по ссылке @ShkolaUpravdoma""", reply_markup=markup)
 
 
@@ -100,7 +121,7 @@ async def receiving_owner_registry(message: types.Message):
 async def receiving_owner_registry(message: types.Message, state: State):
     filename = message.document.file_name
     await message.document.download(destination_file="documents/"+filename)
-    await message.answer("Загружаю собственников. Это может занять некоторое время")
+    mes = await message.answer("Загружаю собственников. Это может занять некоторое время")
     # try:
     result = await exel_reader(f"./documents/{filename}", "Реестр")
     for res in result:
@@ -140,7 +161,9 @@ async def receiving_owner_registry(message: types.Message, state: State):
                      )
     house = db.get_house_by_cad_num(cur_cad_num)
     markup = await schoise_kb()
-    await message.answer(f"""Добавлены собственники по адресу: 
+    info_message = user_info_message[message.from_user.id]
+    print(info_message, info_message.from_user.id)
+    await info_message.edit_text(f"""Добавлены собственники по адресу: 
 {house[0]} (КадНом {cur_cad_num})
 Помещений - {house[1]}. Загружнено собственников - {len(result)}.""")
     await message.answer("Хотите добавить жителей?", reply_markup=markup)
@@ -148,13 +171,15 @@ async def receiving_owner_registry(message: types.Message, state: State):
     # except Exception as ex:
     #     print(ex)
     #     await message.answer(ex+" Обратитесь к администратору")
+    await mes.delete()
+    await message.delete()
 
 
 @dp.callback_query_handler(lambda call: call.data == "add flat", state="*")
 async def add_user(callback: types.CallbackQuery):
     markup = await back_kb()
     await AddWord.add_flat.set()
-    await callback.message.answer("""Загрузите excel-файл со всеми помещениями дома.
+    await callback.message.edit_text("""Загрузите excel-файл со всеми помещениями дома.
 Шаблон файла запросите по ссылке @ShkolaUpravdoma""", reply_markup=markup)
 
 
@@ -165,7 +190,7 @@ async def update_flat(callback: types.CallbackQuery, state=State):
         file_id = user_file_id[callback.from_user.id]
         await bot.download_file_by_id(file_id, destination="documents/"+filename)
         # await callback.message.document.download(destination_file="documents/"+filename)
-        await callback.message.answer("Загружаю помещения. Это может занять некоторое время")
+        mes = await callback.message.answer("Загружаю помещения. Это может занять некоторое время")
         try:
             result = await exel_reader(f"./documents/{filename}", "Помещения")
             print(result)
@@ -174,8 +199,10 @@ async def update_flat(callback: types.CallbackQuery, state=State):
                                   i[3], i[4], i[5], i[6], i[7], i[8], i[9])
             owners = db.get_all_owners(result[0][5])
             markup = await schoise_kb()
-            await callback.message.answer(f"""Добавлен реест помещений для адреса: 
+            user_info = await callback.message.edit_text(f"""Добавлен реест помещений для адреса: 
     МКД: {result[0][2]} (КадНом {result[0][5]}) \nпомещений - {len(result)} \nсобственников - {len(owners)}""",)
+            user_info_message[callback.from_user.id] = user_info
+
             global cur_cad_num
             cur_cad_num = result[0][5]
             await callback.message.answer(f"""Хотите занести собственников в этом доме?""", reply_markup=markup)
@@ -183,7 +210,10 @@ async def update_flat(callback: types.CallbackQuery, state=State):
         except Exception as ex:
             print(ex)
             markup = await back_kb()
-            await callback.message.answer("Убедитесь, что отправлен эксель файл и попробуйте заново", reply_markup=markup)
+            await callback.message.edit_text("Убедитесь, что отправлен эксель файл и попробуйте заново", reply_markup=markup)
+        finally:
+            await mes.delete()
+
     else:
         from .handlers import back
         await back(callback.message, state)
@@ -193,10 +223,13 @@ async def update_flat(callback: types.CallbackQuery, state=State):
 async def receiving_owner_registry(message: types.Message, state: State):
     filename = message.document.file_name
     await message.document.download(destination_file="documents/"+filename)
-    await message.answer("Загружаю помещения. Это может занять некоторое время")
+
+    mes = await message.answer("Загружаю помещения. Это может занять некоторое время")
+    global user_info_message
+
     try:
         result = await exel_reader(f"./documents/{filename}", "Помещения")
-        print(db.get_house_by_cad_num(result[0][5]))
+
         if db.get_house_by_cad_num(result[0][5]):
             markup = await schoise_kb()
             await message.answer("Внимание, такой дом с помещениями уже существует. Хотите продолжить?", reply_markup=markup)
@@ -205,14 +238,16 @@ async def receiving_owner_registry(message: types.Message, state: State):
             user_file_id[message.from_user.id] = message.document.file_id
             await AddWord.update_house.set()
             return
+
         db.add_house(result[0][2], result[0][5], f"house"+result[0]
                      [5], "tenants"+result[0][5], "owners"+result[0][5])
+
         for i in result:
             db.add_house_data(result[0][5], i[1], i[2],
                               i[3], i[4], i[5], i[6], i[7], i[8], i[9])
         owners = db.get_all_owners(result[0][5])
         markup = await schoise_kb()
-        await message.answer(f"""Добавлен реест помещений для адреса: 
+        message_to_edit = await message.answer(f"""Добавлен реест помещений для адреса: 
 МКД: {result[0][2]} (КадНом {result[0][5]}) \nпомещений - {len(result)} \nсобственников - {len(owners)}""",)
         global cur_cad_num
         cur_cad_num = result[0][5]
@@ -221,6 +256,10 @@ async def receiving_owner_registry(message: types.Message, state: State):
         print(ex)
         markup = await back_kb()
         await message.answer("Убедитесь, что отправлен эксель файл и попробуйте заново", reply_markup=markup)
+    finally:
+        await message.delete()
+        await mes.delete()
+        user_info_message[message.from_user.id] = message_to_edit
 
 
 @dp.callback_query_handler(state=AddWord.add_flat)
@@ -237,8 +276,8 @@ async def add_user(callback: types.CallbackQuery, state=State):
 async def add_user(callback: types.CallbackQuery, state=State):
     if callback.data == "yes":
         await state.finish()
-        from .add_tenant import confirm_address
-        await confirm_address(callback.message, cur_cad_num)
+        from .add_tenant import imput_number_of_house
+        await imput_number_of_house(callback, cur_cad_num)
     else:
         from .handlers import back
         await back(callback.message, state)

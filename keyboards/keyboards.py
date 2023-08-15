@@ -9,7 +9,7 @@ async def start_kb():
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=4)
     kb.add(
         types.KeyboardButton(text="Дома"),
-        types.KeyboardButton(text="Житель"),
+        types.KeyboardButton(text="Жители"),
         types.KeyboardButton(text="Собрания"),
         types.KeyboardButton(text="Посты")
     )
@@ -45,7 +45,9 @@ async def registry_kb():
         # types.InlineKeyboardButton(
         # text="Показать список домов", callback_data="house list"),
         types.InlineKeyboardButton(
-        text="Добавить реестр собственников", callback_data="add onwer")
+        text="Добавить реестр собственников", callback_data="add onwer"),
+        types.InlineKeyboardButton(
+        text="QR-код дома", callback_data="qrcode")
     )
     return kb
 

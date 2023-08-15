@@ -78,7 +78,6 @@ async def new_meeting_data(message: types.Message):
     input_date = message.text.replace(
         "-", ".").replace(",", ".").replace("/", ".")
     input_date = input_date.split(".")
-    print(input_date)
     try:
         if len(input_date[2]) == 2:
             input_date[2] = "20"+input_date[2]
@@ -87,7 +86,7 @@ async def new_meeting_data(message: types.Message):
         date = True
     except:
         date = False
-    print(input_date)
+
     if not match or not date:
         await message.answer("Введена некорректная дата.Попробуйте заново\n\
 Формат даты: дд-мм-гггг", reply_markup=markup)

@@ -49,48 +49,67 @@ cur_edited_tenant_id = ""
 
 
 @dp.callback_query_handler(lambda call: call.data == "change address", state="*")
-@dp.message_handler(Text("Житель"), state="*")
+@dp.message_handler(Text("Жители"), state="*")
 async def add_tenant_start(message: types.Message):
     markup = await houses_kb()
     await Add_tenant.select_address.set()
     try:
-        await message.message.answer("Выберите адрес", reply_markup=markup)
-    except:
-        await message.answer("Выберите адрес", reply_markup=markup)
+        try:
+            await message.message.edit_text("Выберите адрес дома", reply_markup=markup)
+        except:
+            await message.message.answer("Выберите адрес дома", reply_markup=markup)
+    except Exception as ex:
+        print(ex)
+        await message.answer(text="Выберите адрес дома", reply_markup=markup)
 
 
 @dp.callback_query_handler(lambda call: call.data in [i[2] for i in db.all_houses()], state=Add_tenant.select_address)
 async def confirm_address(callback: types.CallbackQuery, re_cad_num=None):
     global cur_house
-    if re_cad_num == None:
-        cur_house = callback.data
-    else:
+    if re_cad_num != None:
         cur_house = re_cad_num
-    print(cur_house)
+    elif callback.data == "add tenant" and re_cad_num == None:
+        pass
+    elif callback.data == "delete_tenant" and re_cad_num == None:
+        pass
+    elif callback.data == "change owner" and re_cad_num == None:
+        pass
+    elif callback.data == "change status" and re_cad_num == None:
+        pass
+    elif callback.data == "change email" and re_cad_num == None:
+        pass
+    elif callback.data == "change phone" and re_cad_num == None:
+        pass
+    elif callback.data == "change name" and re_cad_num == None:
+        pass
+    else:
+        cur_house = callback.data
     markup = await tenants_menu_kb()
     await Add_tenant.select_address.set()
     try:
-        await callback.answer("Выберите пункт меню", reply_markup=markup)
+        await callback.edit_text("Выберите пункт меню", reply_markup=markup)
     except:
-        await callback.message.answer("Выберите пункт меню", reply_markup=markup)
+        await callback.message.edit_text("Выберите пункт меню", reply_markup=markup)
 
 
 @dp.callback_query_handler(lambda call: call.data == "tenants list", state="*")
 async def tenants_list(callback: types.CallbackQuery):
     markup = await back_kb()
+
     cur_address = db.get_current_house(cur_house)[1]
     tenants = db.get_tenants_for_exel(cur_house)
     flats = db.get_flats_for_exel(cur_house)
     markup = await tenants_menu_kb()
+
     if tenants == []:
         await callback.message.answer("Еще нет жителей в этом доме")
     else:
         mes = await callback.message.answer("Формирую, подождите немного.")
         try:
-
             await create_tenants_exel(f'./exel/Жители_{cur_address}.xlsx', tenants, flats)
             with open(f'./exel/Жители_{cur_address}.xlsx', "rb") as file:
                 await callback.message.answer_document(file, reply_markup=markup)
+                await callback.message.delete()
             os.remove(f'exel/Жители_{cur_address}.xlsx')
         except Exception as ex:
             await callback.message.answer(f"Произошла ошибка {ex}")
@@ -109,15 +128,38 @@ async def add_tenant(message: types.Message):
 @dp.callback_query_handler(lambda call: call.data == "back", state=Add_tenant.phone)
 @dp.callback_query_handler(lambda call: call.data == "change_flat", state=Add_tenant.add_new_tenant)
 @dp.callback_query_handler(lambda call: call.data == "add tenant", state=Add_tenant.select_address)
-async def imput_number_of_house(callback: types.CallbackQuery, ):
+async def imput_number_of_house(callback: types.CallbackQuery, re_cad_num=None):
     markup = await back_kb()
+    global cur_house
+    if callback.data == "add tenant" and re_cad_num == None:
+        pass
+    elif callback.data == "delete_tenant" and re_cad_num == None:
+        pass
+    elif callback.data == "change owner" and re_cad_num == None:
+        pass
+    elif callback.data == "change status" and re_cad_num == None:
+        pass
+    elif callback.data == "change email" and re_cad_num == None:
+        pass
+    elif callback.data == "change phone" and re_cad_num == None:
+        pass
+    elif callback.data == "change name" and re_cad_num == None:
+        pass
+    elif callback.data == "add tenant" and re_cad_num == None:
+        cur_house = callback.data
+    else:
+        cur_house = re_cad_num
+
     if callback.data != "change_flat":
         tenants[callback.from_user.id] = {}
         tenants[callback.from_user.id]["date_of_create"] = datetime.datetime.today(
         ).strftime("%Y.%m.%d, %H:%M")
         tenants[callback.from_user.id]["mkd_id"] = cur_house.replace(
             ":", "")
-        tenants[callback.from_user.id]["cad_num"] = cur_house
+        try:
+            tenants[callback.from_user.id]["cad_num"] = cur_house
+        except:
+            pass
         tenants[callback.from_user.id]["address"] = db.get_current_house(cur_house)[
             1]
     await callback.message.answer("Введите номер помещения", reply_markup=markup)
@@ -158,7 +200,7 @@ async def confirm_flat(message: types.Message, ):
 async def input_name(callback: types.CallbackQuery, state: State):
     if callback.data == "yes":
         markup = await back_kb()
-        await callback.message.answer("Введите имя жильца", reply_markup=markup)
+        await callback.message.answer("Введите имя жителя", reply_markup=markup)
         await Add_tenant.full_name.set()
     if callback.data == "no":
         await add_tenant(callback.message)
@@ -170,7 +212,7 @@ async def imput_full_name(message: types.Message, ):
     tenants[message.from_user.id]["name"] = message.text
 
     markup = await back_kb()
-    await message.answer("Введите номер телефона жильца", reply_markup=markup)
+    await message.answer("Введите номер телефона жителя", reply_markup=markup)
     await Add_tenant.phone.set()
 
 
@@ -208,7 +250,7 @@ async def imput_full_name(message: types.Message, ):
     if text != "":
         await message.answer(text)
     markup = await tenant_status_kb()
-    await message.answer("Выберите статус жильца", reply_markup=markup)
+    await message.answer("Выберите статус жителя", reply_markup=markup)
     await Add_tenant.status.set()
 
 
@@ -465,7 +507,7 @@ async def redirect(callback: types.CallbackQuery, state: State):
         #     await callback.message.answer(ex, reply_markup=markup)
     if callback.data == "no":
         markup = await back_kb()
-        await callback.message.answer("Введите имя жильца", reply_markup=markup)
+        await callback.message.answer("Введите имя жителя", reply_markup=markup)
         await Add_tenant.full_name.set()
 
 
@@ -546,7 +588,7 @@ async def edit_tenant_menu(callback: types.CallbackQuery):
 
 async def create_edit_tenant_text():
     tenant = db.get_tenant_by_id(cur_house, cur_edited_tenant_id)
-    text = f"""Данные жильца: 
+    text = f"""Данные жителя: 
 Имя: {tenant[1]}
 Телефон: +{tenant[2]} WA({tenant[8]})
 email: {tenant[3]}
