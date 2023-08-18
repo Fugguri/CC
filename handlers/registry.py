@@ -6,7 +6,7 @@ from aiogram.dispatcher.filters import Text
 from keyboards.keyboards import start_kb, registry_kb, back_kb, houses_kb, schoise_kb
 
 from main import dp, bot, db, wa
-from utils import generate_qrcode
+from utils import generate_qrcode, generate_short_link
 
 from utils.exel import exel_reader
 from utils.texts import Texts
@@ -62,6 +62,7 @@ async def add_user(message: types.Message):
         text += "Пока нет добавленных домов"
     markup = await registry_kb()
     await message.answer(text, reply_markup=markup)
+    await message.delete()
 
 
 @dp.callback_query_handler(lambda call: call.data == "house list", state="*")
@@ -80,12 +81,20 @@ async def add_user(callback: types.CallbackQuery):
 @dp.callback_query_handler(lambda call: call.data in [i[2] for i in db.all_houses()], state=AddWord)
 async def add_owners(callback: types.CallbackQuery, state: State):
     house = db.get_house_by_id(callback.data)
-    markup = await back_kb()
-    link = texts.create_house_link(house)
-    image = generate_qrcode(link)
     
-    text = link.replace("https://wa.me/79319869456?text=","")
-    await callback.message.answer_photo(photo=image,caption=text,reply_markup=markup) 
+    
+    link = texts.create_house_link(house)
+    short_link = generate_short_link(link)
+    image = generate_qrcode(short_link)
+    text = texts.create_qr_code_caption(house,short_link)
+    
+    
+
+    await callback.message.answer_photo(photo=image,caption=short_link) 
+    await callback.message.answer(text)
+    
+    await callback.message.delete()
+
     
 
 @dp.callback_query_handler(lambda call: call.data == "add onwer", state="*")

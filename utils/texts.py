@@ -57,7 +57,7 @@ email: {user.email}
 Номер кв: {user.flat_num}
 Статус: {user.status}    
 """
-    def create_house_link(self,house):
+    def create_house_link(self,house:str):
         
         data = """МКД: {}
 Кад.Ном: {}
@@ -65,5 +65,8 @@ email: {user.email}
         text = f"https://wa.me/79319869456?text={data}"
         return text
 
+    def create_qr_code_caption(self,house,link:str):
+        return """МКД: {} \nКонсъерж дома здесь {} """.format(house[1],link)
+    
 if __name__ == "__main__":
     pass

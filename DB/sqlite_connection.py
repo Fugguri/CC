@@ -543,7 +543,7 @@ WHERE id=4 ; """)
         try:
             with self.connection:
                 self.cursor.execute(
-                    """ SELECT name FROM houses WHERE cad_num=?""", (cad_num,))
+                    """ SELECT name FROM houses WHERE cad_num like ?""", (cad_num,))
 
                 house = self.cursor.fetchone()
                 self.cursor.execute(

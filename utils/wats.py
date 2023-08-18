@@ -502,7 +502,7 @@ class Watsapp_bot(Watsapp, Utils):
             a= message_text.replace("МКД:","")
             a = a.replace("Кад.Ном:","")
             address, cad_num = a.split("\n")
-            
+            is_house_exist = self.db.get_house_by_cad_num(cad_num=cad_num.strip())
             try:
                 self.guest[phone]['address'] = address.strip()
                 self.guest[phone]['cad_num'] = cad_num.strip()
@@ -511,21 +511,24 @@ class Watsapp_bot(Watsapp, Utils):
                 self.guest[phone]['address'] = address.strip()
                 self.guest[phone]['cad_num'] = cad_num.strip()
                 
-            if not self.db.get_house_by_cad_num(cad_num=cad_num.strip()):
-                self.guest[phone]['address'] = address.strip()
-                self.guest[phone]['cad_num'] = cad_num.strip()
-        # if not is_tenant and not state:
-                wellcome_text = f"""Приветствую!
+            if is_house_exist :
+                self.guest[phone]['address'] = is_house_exist[0]
+                self.guest[phone]['cad_num'] = is_house_exist[1]
+            else:
+                address = "#"
+                self.guest[phone]['cad_num'] = cad_num
+                
+            wellcome_text = f"""Приветствую!
 Меня зовут Домиант, я бот-помощник, работаю виртуальным консъержем в доме
 {address}
 Я могу передать сообщения жильцов и гостей управляющему, председателю (старшему по дому) или секретарю собраний."""
-                self.send_sync_message(wellcome_text, phone)
-
-                text = "Как могу к вам обращаться?"
-                self.send_sync_message(text, phone)
-                self.set_state(phone, "name")
-                self.missive[phone] = message_text
-
+                
+            self.send_sync_message(wellcome_text, phone)
+            text = "Как могу к вам обращаться?"
+            self.send_sync_message(text, phone)
+            self.set_state(phone, "name")
+            self.missive[phone] = message_text
+            return
         if state == "wait_form" or not state:
             if message_text.lower() == "заполнил":
                 try:
@@ -540,7 +543,6 @@ class Watsapp_bot(Watsapp, Utils):
                 return
                 
         if not state:
-            
             if is_tenant:            
                 text = """Кому Вы хотите передать это обращение?
 Управляющему (заявку, запрос или жалобу) - введите 1
@@ -557,16 +559,13 @@ class Watsapp_bot(Watsapp, Utils):
                 self.send_sync_message(text, phone)
                 return
 
-        if state == "name":
-            
+        if state == "name":            
             try:
                 address = self.guest[phone]['address'] 
                 cad_num = self.guest[phone]['cad_num'] 
-                
                 gf_link = self.create_gf_link(phone,address)
             except Exception as ex:
                 gf_link = self.create_gf_link(phone,"")
-                
                 print(ex)
             
             self.send_sync_message(
@@ -586,7 +585,6 @@ class Watsapp_bot(Watsapp, Utils):
             return
 
         if state == "comu":
-
             if message_text in ["1", "2", "3"]:
                 self.receiver[phone] = ""
                 if message_text == "1":

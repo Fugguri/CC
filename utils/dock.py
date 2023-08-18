@@ -5,7 +5,7 @@ from docx.text.paragraph import Paragraph
 from docx.oxml.xmlchemy import OxmlElement
 
 
-def move_table_after(document, table, search_phrase):
+def _move_table_after(document, table, search_phrase):
     regexp = re.compile(search_phrase)
     for paragraph in document.paragraphs:
         if paragraph.text and regexp.search(paragraph.text):
@@ -14,7 +14,7 @@ def move_table_after(document, table, search_phrase):
             return paragraph
 
 
-def insert_paragraph_after(paragraph, text=None, style=None, bold=None):
+def _insert_paragraph_after(paragraph, text=None, style=None, bold=None):
     """Insert a new paragraph after the given paragraph."""
     new_p = OxmlElement("w:p")
     paragraph._p.addnext(new_p)
