@@ -446,7 +446,6 @@ class Watsapp_bot(Watsapp, Utils):
         state = self.get_state(phone)
         message_text = self.create_income_message_text(body)
         print(is_tenant,phone)
-        return
         self._create_reminder(phone)
         
         if self.collect_photo(body, phone):
