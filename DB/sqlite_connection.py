@@ -104,8 +104,30 @@ class Database(Texts):
                     comment_for_programmer TEXT,
                     messanger_type TEXT
                     );
+                    CREATE TABLE IF NOT EXISTS Requests
+                    (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    date DATE
+                    text TEXT,
+                    name TEXT,
+                    phone TEXT,
+                    status TEXT,
+                    photos TEXT
+                    );
+                    CREATE TABLE IF NOT EXISTS Questionnaires
+                    (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tenant_id DATE
+                    date TEXT,
+                    name TEXT,
+                    phone TEXT,
+                    status TEXT
+                    );
+                    
                     """
             self.cursor.executescript(create)
+
+    def create_request(self,date, text,name,phone,status,photos):
+        with self.connection:
+            self.cursor.execute(f"INSERT INTO Requests( date, text,name,phone,status,photos )VALUES(?, ?,?,?,?,?)",(date, text,name,phone,status,photos))
 
     def add_house(self, name, cad_num, house, tenants, owners):
         with self.connection:
@@ -296,11 +318,13 @@ class Database(Texts):
             )
 
     def add_tenant(self, tenant):
-
-        tenant["last_email_date"] = ""
-        tenant["last_oss_number"] = ""
-        tenant["date_of_sopd"] = ""
-        tenant["passport"] = ""
+        try:
+            tenant["last_email_date"] = ""
+            tenant["last_oss_number"] = ""
+            tenant["date_of_sopd"] = ""
+            tenant["passport"] = ""
+        except:
+            pass
         with self.connection:
             self.cursor.execute(f"""INSERT INTO 'tenants{tenant["cad_num"]}'
                                 (
@@ -414,12 +438,10 @@ class Database(Texts):
 
         return self.cursor.fetchone()
 
-
     def get_house_by_id(self, id):
         with self.connection:
             self.cursor.execute(f"SELECT * FROM 'houses' WHERE cad_num=? ",(id,))
         return self.cursor.fetchone()
-
 
     def get_owner_by_full_name(self, cad_num, first_name, middle_name, last_name):
         with self.connection:
@@ -552,6 +574,17 @@ WHERE id=4 ; """)
                 return (house[0], count[0],)
         except:
             return False
+        
+    
+    def get_house_by_address(self, address):
+        with self.connection:
+            self.cursor.execute(""" SELECT cad_num FROM houses WHERE name like ?""", (address,))
+            return self.cursor.fetchone()
+
+    def get_flat_by_num(self, num,cad_num):
+        with self.connection:
+            self.cursor.execute(f""" SELECT * FROM `house{cad_num}` WHERE number like ?""", (num,))
+            return self.cursor.fetchone()
 
     def get_tenants_for_exel(self, cad_num):
         with self.connection:
@@ -735,8 +768,9 @@ WHERE id=4 ; """)
                     if 0 < i:
                         query += f"\nleft join `{tenants_tables[i][0]}`"
                         query += f"USING (phone) "
-                query += f"WHERE phone={phone} "
+                query += f"WHERE phone={phone}"
 
+                print(query)
                 self.cursor.execute(query)
             except:
                 pass
@@ -840,7 +874,7 @@ if __name__ == "__main__":
     # a.delete_house('3')
     # a.delete_house('43')
     # a.delete_house('56')
-    a.delete_house('65')
+    # a.delete_house('65')
     # a.delete_house('53')
 
-    # a.delete_tenant("78:31:0001283:3019", "4")
+    a.delete_tenant("78:31:0001693:2005", "15")

@@ -48,8 +48,9 @@ class Texts:
             except yaml.YAMLError as exc:
                 print(exc)
 
-    def new_user_from_form(self, user):
-        return f"""<b>Новая анкета гостя ({user.data})</b>
+    def new_user_from_form(self, user,wa_num=""):
+        return f"""<b>Анкета от номера {wa_num} ({user.data})</b>
+ИМЯ: {user.name}
 Телефон: +{user.phone} 
 email: {user.email}
 Собственник: --

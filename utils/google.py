@@ -23,7 +23,6 @@ class GoogleSheest(Utils):
         cells = worksheet.get_values()
         result = []
         for cell in cells:
-            print(cell)
             user = User_from_googlesheet(*cell)
             user.phone = self._convert_number(user.phone)
             result.append(user)
@@ -33,7 +32,12 @@ class GoogleSheest(Utils):
     def new_form_notify(self, phone):
         users_from_form = self.collect_guest_data()
         for user in users_from_form:
+            print(user)
             if user.phone == phone:
                 text = self.create_text.new_user_from_form(user)
+                self.tg.new_form_notification(text)
+                return
+            else:
+                text = self.create_text.new_user_from_form(user,phone)
                 self.tg.new_form_notification(text)
                 return

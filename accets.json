@@ -1,0 +1,5 @@
+{
+  "server_url": "5e9ef1dc9a02.vps.myjino.ru",
+  "server_ssh": "ssh -p 49582 root@5e9ef1dc9a02.vps.myjino.ru",
+  "server_pass": "Pass_word_123"
+}
