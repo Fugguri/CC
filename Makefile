@@ -11,6 +11,5 @@ setup:
 	pip install -r requirements.txt
 update:
 	git pull
-	pyton3 main.py
 start:
 	pyton3 main.py
